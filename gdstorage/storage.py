@@ -6,6 +6,7 @@ from io import BytesIO
 
 from dateutil.parser import parse
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files import File
 from django.core.files.storage import Storage
 from django.utils.deconstruct import deconstructible
@@ -145,6 +146,7 @@ class GoogleDriveStorage(Storage):
     _GOOGLE_DRIVE_FOLDER_MIMETYPE_ = 'application/vnd.google-apps.folder'
     KEY_FILE_PATH = 'GOOGLE_DRIVE_STORAGE_JSON_KEY_FILE'
     KEY_FILE_CONTENT = 'GOOGLE_DRIVE_STORAGE_JSON_KEY_FILE_CONTENTS'
+    ROOT_FOLDER_ID = "GOOGLE_DRIVE_STORAGE_ROOT_FOLDER_ID"
 
     def __init__(self, json_keyfile_path=None, permissions=None):
         """
@@ -155,6 +157,10 @@ class GoogleDriveStorage(Storage):
         """
         settings_keyfile_path = getattr(settings, self.KEY_FILE_PATH, None)
         self._json_keyfile_path = json_keyfile_path or settings_keyfile_path
+        try:
+            self.root_folder_id = getattr(settings, self.ROOT_FOLDER_ID)
+        except AttributeError:
+            raise ImproperlyConfigured(f"Django Google Drive Storage requires a setting `{self.ROOT_FOLDER_ID}` be set.")
 
         if self._json_keyfile_path:
             credentials = Credentials.from_service_account_file(
@@ -314,9 +320,8 @@ class GoogleDriveStorage(Storage):
         return File(fh, name)
 
     def _save(self, name, content):
-        name = os.path.join(settings.GOOGLE_DRIVE_STORAGE_MEDIA_ROOT, name)
         folder_path = os.path.sep.join(self._split_path(name)[:-1])
-        folder_data = self._get_or_create_folder(folder_path)
+        folder_data = self._get_or_create_folder(folder_path, self.root_folder_id)
         parent_id = None if folder_data is None else folder_data['id']
         # Now we had created (or obtained) folder on GDrive
         # Upload the file
