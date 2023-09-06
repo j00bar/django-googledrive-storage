@@ -245,7 +245,7 @@ class GoogleDriveStorage(Storage):
             if parent_id is not None:
                 meta_data['parents'] = [parent_id]
         current_folder_data = self._drive_service.files().create(
-            body=meta_data).execute()
+            body=meta_data, supportsAllDrives=True).execute()
         return current_folder_data
 
     def _check_file_exists(self, filename, parent_id=None):
@@ -261,7 +261,7 @@ class GoogleDriveStorage(Storage):
             # This is the lack of directory at the beginning of a 'file.txt'
             # Since the target file lacks directories, the assumption
             # is that it belongs at '/'
-            return self._drive_service.files().get(fileId='root').execute()
+            return self._drive_service.files().get(fileId=parent_id or 'root', supportsAllDrives=True).execute()
         split_filename = self._split_path(filename)
         if len(split_filename) > 1:
             # This is an absolute path with folder inside
@@ -275,7 +275,7 @@ class GoogleDriveStorage(Storage):
             if parent_id is not None:
                 q = "{0} and '{1}' in parents".format(q, parent_id)
             results = self._drive_service.files().list(
-                q=q, fields='nextPageToken, files(*)').execute()
+                q=q, fields='nextPageToken, files(*)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
             items = results.get('files', [])
             for item in items:
                 if item['name'] == split_filename[0]:
@@ -288,13 +288,13 @@ class GoogleDriveStorage(Storage):
         if parent_id is not None:
             q = "{0} and '{1}' in parents".format(q, parent_id)
         results = self._drive_service.files().list(
-            q=q, fields='nextPageToken, files(*)').execute()
+            q=q, fields='nextPageToken, files(*)', supportsAllDrives=True).execute()
         items = results.get('files', [])
         if len(items) > 0:
             return items[0]
         q = '' if parent_id is None else "'{0}' in parents".format(parent_id)
         results = self._drive_service.files().list(
-            q=q, fields='nextPageToken, files(*)').execute()
+            q=q, fields='nextPageToken, files(*)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         items = results.get('files', [])
         for item in items:
             if split_filename[0] in item['name']:
@@ -310,7 +310,7 @@ class GoogleDriveStorage(Storage):
         """  # noqa: E501
         file_data = self._check_file_exists(name)
         request = self._drive_service.files().get_media(
-            fileId=file_data['id'])
+            fileId=file_data['id'], supportsAllDrives=True)
         fh = BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
         done = False
@@ -339,12 +339,14 @@ class GoogleDriveStorage(Storage):
             body['parents'] = [parent_id]
         file_data = self._drive_service.files().create(
             body=body,
-            media_body=media_body).execute()
+            media_body=media_body,
+            supportsAllDrives=True
+            ).execute()
 
         # Setting up permissions
         for p in self._permissions:
             self._drive_service.permissions().create(
-                fileId=file_data['id'], body={**p.raw}).execute()
+                fileId=file_data['id'], body={**p.raw}, supportsAllDrives=True).execute()
 
         return file_data.get('originalFilename', file_data.get('name'))
 
@@ -379,6 +381,7 @@ class GoogleDriveStorage(Storage):
             file_params = {
                 'q': "'{0}' in parents and mimeType != '{1}'".format(
                     folder_id['id'], self._GOOGLE_DRIVE_FOLDER_MIMETYPE_),
+                "supportsAllDrives": True,
             }
             dir_params = {
                 'q': "'{0}' in parents and mimeType = '{1}'".format(
